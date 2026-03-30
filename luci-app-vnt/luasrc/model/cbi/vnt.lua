@@ -1,9 +1,8 @@
-local fs = require "luci.fs"
 local http = luci.http
 local nixio = require "nixio"
 
 m = Map("vnt")
-m.description = translate('vnt是一个简便高效的异地组网、内网穿透工具。项目地址：<a href="https://github.com/lbl8603/vnt">github.com/lbl8603/vnt</a>&nbsp;&nbsp;<a href="http://qm.qq.com/cgi-bin/qm/qr?_wv=1027&k=o3Rr9xUWwAAnV9TkU_Nyj3yHNLs9k5F5&authKey=l1FKvqk7%2F256SK%2FHrw0PUhs%2Bar%2BtKYx0pLb7aiwBN9%2BKBCY8sOzWWEqtl4pdXAT7&noverify=0&group_code=1034868233">QQ群</a>&nbsp;&nbsp;安卓端：<a href="https://github.com/lbl8603/VntApp">VntApp</a>')
+m.description = translate('vnt是一个简便高效的异地组网、内网穿透工具。<br>官网：<a href="http://rustvnt.com/">rustvnt.com</a>&nbsp;&nbsp;项目地址：<a href="https://github.com/vnt-dev/vnt">github.com/vnt-dev/vnt</a>&nbsp;&nbsp;安卓端、GUI：<a href="https://github.com/lmq8267/VntApp">VntApp</a>&nbsp;&nbsp;<a href="http://qm.qq.com/cgi-bin/qm/qr?_wv=1027&k=o3Rr9xUWwAAnV9TkU_Nyj3yHNLs9k5F5&authKey=l1FKvqk7%2F256SK%2FHrw0PUhs%2Bar%2BtKYx0pLb7aiwBN9%2BKBCY8sOzWWEqtl4pdXAT7&noverify=0&group_code=1034868233">QQ群</a>')
 
 -- vnt-cli
 m:section(SimpleSection).template  = "vnt/vnt_status"
@@ -52,9 +51,10 @@ switch.write = function(self, section, value)
     return Flag.write(self, section, value)
 end
 
-mode = s:taboption("general",ListValue, "mode", translate("接口模式"))
-mode:value("dhcp")
-mode:value("static")
+mode = s:taboption("general",ListValue, "mode", translate("接口模式"),
+	translate("动态分配将由服务器随机分配一个未使用的ip地址，重启程序可能导致ip变化，建议手动指定ip并指定设备ID"))
+mode:value("dhcp",translate("动态分配"))
+mode:value("static",translate("手动指定"))
 
 ipaddr = s:taboption("general",Value, "ipaddr", translate("接口IP地址"),
 	translate("每个vnt-cli客户端的接口IP不能相同"))
@@ -79,18 +79,21 @@ forward = s:taboption("general",Flag, "forward", translate("启用IP转发"),
 	translate("内置的IP代理较为简单，而且一般来说直接使用网卡NAT转发性能会更高,所以默认开启IP转发关闭内置的ip代理"))
 forward.rmempty = false
 
+allow_wg = s:taboption("general",Flag, "allow_wg", translate("允许WireGuard接入"),
+	translate("由于WireGuard是来自vnts转发的，如果vnts不受信任，这将会有安全隐患，所以默认不允许WireGuard流量访问本机"))
+allow_wg.rmempty = false
+
 log = s:taboption("general",Flag, "log", translate("启用日志"),
-	translate("运行日志在/tmp/vnt.log,可在上方客户端日志查看，无法启动等详细错误日志在 状态-系统日志里查看"))
+	translate("运行日志在/tmp/vnt.log,可在上方客户端日志查看"))
 log.rmempty = false
 
 clibin = s:taboption("privacy", Value, "clibin", translate("vnt-cli程序路径"),
 	translate("自定义vnt-cli的存放路径，确保填写完整的路径及名称,若指定的路径可用空间不足将会自动移至/tmp/vnt-cli"))
-clibin.placeholder = "/tmp/vnt-cli"
+clibin.placeholder = "/usr/bin/vnt-cli"
 
 vntshost = s:taboption("privacy", Value, "vntshost", translate("vnts服务器地址"),
-	translate("相同的服务器，相同token的设备才会组成一个局域网"))
-vntshost.placeholder = "域名:端口"
-vntshost.password = true
+	translate("相同的服务器，相同token的设备才会组成一个局域网<br>协议支持使用tcp://和ws://和wss://,默认为udp://"))
+vntshost.placeholder = "tcp://域名:端口"
 
 vntdns = s:taboption("privacy",DynamicList, "vntdns", translate("DNS服务器"),
 	translate("指定DNS服务器地址,可使用多个dns,不指定时使用系统解析"))
@@ -100,8 +103,8 @@ stunhost = s:taboption("privacy",DynamicList, "stunhost", translate("stun服务�
 	translate("使用stun服务探测客户端NAT类型，不同类型有不同的打洞策略，最多三个，超过将被忽略<br>已内置谷歌 QQ 可不填，一些<a href='https://github.com/heiher/natmap/issues/18#issue-1580804352' target='_blank'>免费stun服务器</a>"))
 stunhost.placeholder = "stun.qq.com:3478"
 
-local model = fs.readfile("/proc/device-tree/model") or ""
-local hostname = fs.readfile("/proc/sys/kernel/hostname") or ""
+local model = nixio.fs.readfile("/proc/device-tree/model") or ""
+local hostname = nixio.fs.readfile("/proc/sys/kernel/hostname") or ""
 model = model:gsub("\n", "")
 hostname = hostname:gsub("\n", "")
 local device_name = (model ~= "" and model) or (hostname ~= "" and hostname) or "OpenWrt"
@@ -111,22 +114,12 @@ desvice_name = s:taboption("privacy", Value, "desvice_name", translate("设备�
 desvice_name.placeholder = device_name
 desvice_name.default = device_name
 
-tunmode = s:taboption("privacy",ListValue, "tunmode", translate("TUN/TAP网卡"),
-	translate("默认使用tun网卡，tun网卡效率更高"))
-tunmode:value("tun")
-tunmode:value("tap")
-
 tunname = s:taboption("privacy",Value, "tunname", translate("虚拟网卡名称"),
-	translate("自定义虚拟网卡的名称，在多开时虚拟网卡名称不能相同，默认：TUN模式为 vnt-tun ，TAP模式为 vnt-tap"))
+	translate("自定义虚拟网卡的名称，在多开时虚拟网卡名称不能相同，默认为 vnt-tun"))
 tunname.placeholder = "vnt-tun"
 
-tcp = s:taboption("privacy",ListValue, "tcp", translate("TCP/UDP模式"),
-	translate("有些网络提供商对UDP限制比较大，这个时候可以选择使用TCP模式，提高稳定性。一般来说udp延迟和消耗更低"))
-tcp:value("udp")
-tcp:value("tcp")
-
 relay = s:taboption("privacy",ListValue, "relay", translate("传输模式"),
-	translate("自动:根据当前网络环境，自动选择由服务器或客户端转发还是客户端之间直连<br>转发:仅中继转发，会禁止打洞/p2p直连，只使用服务器或客户端转发<br>p2p:仅直连模式，会禁止网络数据从服务器/客户端转发，只会使用服务器转发控制包<br>在网络环境很差时，不使用p2p只使用服务器中继转发效果可能更好（可以配合tcp模式一起使用）<br>tcp直连需要指定监听port，且防火墙需要放行第一个端口，才有几率tcp-p2p"))
+	translate("自动:根据当前网络环境，自动选择由服务器或客户端转发还是客户端之间直连<br>转发:仅中继转发，会禁止打洞/p2p直连，只使用服务器或客户端转发<br>p2p:仅直连模式，会禁止网络数据从服务器/客户端转发，只会使用服务器转发控制包<br>在网络环境很差时，不使用p2p只使用服务器中继转发效果可能更好（可以配合服务器的tcp协议一起使用）<br>tcp直连需要指定监听port，且防火墙需要放行第一个端口，才有几率tcp-p2p"))
 relay:value("自动")
 relay:value("转发")
 relay:value("P2P")
@@ -136,33 +129,33 @@ client_port = s:taboption("privacy", Value, "client_port", translate("本地监�
 client_port.placeholder = "0,0"
 
 mapping = s:taboption("privacy",DynamicList, "mapping", translate("端口映射"),
-	translate("端口映射,可以设置多个映射地址，例如 udp:0.0.0.0:80->10.26.0.10:80 和 tcp:0.0.0.0:80->10.26.0.11:81 <br>表示将本地udp 80端口的数据转发到10.26.0.10:80，将本地tcp 80端口的数据转发到10.26.0.11:81，转发的目的地址可以使用域名+端口"))
-mapping.placeholder = "tcp:0.0.0.0:80->10.26.0.10:80"
+	translate("端口映射,可以设置多个映射地址，例如 udp:0.0.0.0:80-10.26.0.10:80 和 tcp:0.0.0.0:80-10.26.0.11:81 <br>表示将本地udp 80端口的数据转发到10.26.0.10:80，将本地tcp 80端口的数据转发到10.26.0.11:81，转发的目的地址可以使用域名+端口"))
+mapping.placeholder = "tcp:0.0.0.0:80-10.26.0.10:80"
 
 mtu = s:taboption("privacy",Value, "mtu", translate("MTU"),
 	translate("设置虚拟网卡的mtu值，大多数情况下（留空）使用默认值效率会更高，也可根据实际情况进行微调，默认值：不加密1450，加密1410"))
 mtu.datatype = "range(1,1500)"
-mtu.placeholder = "1438"
+mtu.placeholder = "1300"
 
-par = s:taboption("privacy",Value, "par", translate("并行任务数"),
-	translate("默认留空，任务并行度(必须为正整数),默认值为1,该值表示处理网卡读写的任务数,组网设备数较多、处理延迟较大时可适当调大此值"))
-par.placeholder = "2"
-
-punch = s:taboption("privacy",ListValue, "punch", translate("IPV4/IPV6"),
-	translate("选择只使用ipv4打洞或者只使用ipv6打洞，默认两则都会使用,ipv6相对于ipv4速率可能会有所降低，ipv6更容易打通直连"))
-punch:value("ipv4/ipv6")
-punch:value("ipv4")
-punch:value("ipv6")
+punch = s:taboption("privacy",ListValue, "punch", translate("打洞模式"),
+	translate("选择只使用ipv4打洞或者只使用ipv6打洞，all都会使用,ipv6相对于ipv4速率可能会有所降低，ipv6更容易打通直连"))
+punch:value("all",translate("都使用"))
+punch:value("ipv4",translate("仅ipv4-tcp/udp"))
+punch:value("ipv6",translate("仅ipv6-tcp/udp"))
+punch:value("ipv4-tcp",translate("仅ipv4-tcp"))
+punch:value("ipv6-tcp",translate("仅ipv6-tcp"))
+punch:value("ipv4-udp",translate("仅ipv4-udp"))
+punch:value("ipv6-udp",translate("仅ipv6-udp"))
 
 comp = s:taboption("privacy",ListValue, "comp", translate("启用压缩"),
 	translate("启用压缩，默认仅支持lz4压缩，开启压缩后，如果数据包长度大于等于128，则会使用压缩，否则还是会按原数据发送<br>也支持zstd压缩，但是需要确认程序编译时是否添加支持zstd否则无法启动！编译参数--features zstd<br>如果宽度速度比较慢，可以考虑使用高级别的压缩"))
-comp:value("OFF")
+comp:value("OFF",translate("关闭"))
 comp:value("lz4")
 comp:value("zstd")
 
 passmode = s:taboption("privacy",ListValue, "passmode", translate("加密模式"),
 	translate("默认off不加密，通常情况aes_gcm安全性高、aes_ecb性能更好，在低性能设备上aes_ecb、chacha20、chacha20_poly1305、xor速度最快<br>注意：xor为数据混淆，并不是一种强大的加密算法，易被破解，因此不适合用于真正的加密需求"))
-passmode:value("off")
+passmode:value("off",translate("不加密"))
 passmode:value("aes_ecb")
 passmode:value("sm4_cbc")
 passmode:value("aes_cbc")
@@ -174,6 +167,7 @@ passmode:value("xor")
 key = s:taboption("privacy",Value, "key", translate("加密密钥"),
 	translate("先开启上方的加密模式再填写密钥才能生效，使用相同密钥的客户端才能通信，服务端无法解密(包括中继转发数据)"))
 key.placeholder = "wodemima"
+key.password = true
 key:depends("passmode", "aes_ecb")
 key:depends("passmode", "sm4_cbc")
 key:depends("passmode", "sm4_cbc")
@@ -181,6 +175,29 @@ key:depends("passmode", "aes_gcm")
 key:depends("passmode", "chacha20")
 key:depends("passmode", "chacha20_poly1305")
 key:depends("passmode", "xor")
+
+local sys = require("luci.sys")
+
+local_dev = s:taboption("privacy", ListValue, "local_dev", translate("绑定出口网卡"),
+    translate("指定作为流量出口的网卡"))
+local_dev.optional = false
+
+-- 添加空白值作为默认选项
+local_dev:value("", translate("不绑定"))
+
+-- 获取通过 ifconfig 列出的网卡接口
+local ifaces = sys.exec("ifconfig | grep -E '^[a-zA-Z0-9]+' | awk -F':' '{print $1}' | awk '{print $1}'")
+for iface in string.gmatch(ifaces, "%S+") do
+    -- 使用 ip 命令获取网卡的 IP 地址
+    local ip_addr = sys.exec("ifconfig " .. iface .. " | grep 'inet ' | awk '{print $2}'")
+    ip_addr = ip_addr:gsub("%s+", "")  -- 去除回车和空白字符
+    
+    -- 如果没有找到 IP 地址，则继续下一个网卡
+    if ip_addr ~= "" then
+        -- 将网卡名作为值，IP地址作为显示名称
+        local_dev:value(iface, iface .. " (" .. ip_addr .. ")")
+    end
+end
 
 serverw = s:taboption("privacy",Flag, "serverw", translate("启用服务端客户端加密"),
 	translate("用服务端通信的数据加密，采用rsa+aes256gcm加密客户端和服务端之间通信的数据，可以避免token泄漏、中间人攻击，<br>上面的加密模式是客户端与客户端之间加密，这是服务器和客户端之间的加密，不是一个性质，无需选择加密模式"))
@@ -193,6 +210,19 @@ finger.rmempty = false
 first_latency = s:taboption("privacy",Flag, "first_latency", translate("启用优化传输"),
 	translate("启用后优先使用低延迟通道，默认情况下优先使用p2p通道，某些情况下可能p2p比客户端中继延迟更高，可启用此参数进行优化传输"))
 first_latency.rmempty = false
+
+disable_stats = s:taboption("privacy",Flag, "disable_stats", translate("启用流量统计"),
+	translate("记录vnt使用的流量统计信息"))
+disable_stats.rmempty = false
+
+vnt_forward = s:taboption("privacy",MultiValue, "vnt_forward", translate("访问控制"),
+	translate("设置不同网络区域之间的流量允许规则"))
+vnt_forward:value("vntfwlan", translate("允许从虚拟网络 VNT 到局域网 lan 的流量"))
+vnt_forward:value("vntfwwan", translate("允许从虚拟网络 VNT 到广域网 wan 的流量"))
+vnt_forward:value("lanfwvnt", translate("允许从局域网 lan 到虚拟网络 VNT 的流量"))
+vnt_forward:value("wanfwvnt", translate("允许从广域网 wan 到虚拟网络 VNT 的流量"))
+vnt_forward.default = "vntfwlan vntfwwan lanfwvnt"
+vnt_forward.rmempty = true
 
 check = s:taboption("privacy",Flag, "check", translate("通断检测"),
         translate("开启通断检测后，可以指定对端的设备IP，当所有指定的IP都ping不通时将会重启vnt程序"))
@@ -320,6 +350,27 @@ btn4route.cfgvalue = function(self, section)
     return string.format("<pre>%s</pre>", luci.util.pcdata(content))
 end
 
+btnchart = s:taboption("infos", Button, "btnchart")
+btnchart.inputtitle = translate("设备流量统计")
+btnchart.description = translate("点击按钮刷新，查看所有设备流量统计")
+btnchart.inputstyle = "apply"
+btnchart:depends({ cmdmode = "原版", disable_stats = "1" })
+btnchart.write = function()
+if process_status ~= "" then
+    luci.sys.call("$(uci -q get vnt.@vnt-cli[0].clibin) --chart_a >/tmp/vnt-cli_chart")
+else
+    luci.sys.call("echo '错误：程序未运行！请启动程序后重新点击刷新' >/tmp/vnt-cli_chart")
+end
+end
+
+btn4chart = s:taboption("infos", DummyValue, "btn4chart")
+btn4chart.rawhtml = true
+btn4chart:depends("cmdmode", "原版")
+btn4chart.cfgvalue = function(self, section)
+    local content = nixio.fs.readfile("/tmp/vnt-cli_chart") or ""
+    return string.format("<pre>%s</pre>", luci.util.pcdata(content))
+end
+
 vnt_cmd = s:taboption("infos", Button, "vnt_cmd" )
 vnt_cmd.rawhtml = true
 vnt_cmd:depends("cmdmode", "表格式")
@@ -346,20 +397,11 @@ btn5cmd.cfgvalue = function(self, section)
     return string.format("<pre>%s</pre>", luci.util.pcdata(content))
 end
 
-btnrm = s:taboption("infos", Button, "btnrm")
-btnrm.inputtitle = translate("检测更新")
-btnrm.description = translate("点击按钮开始检测更新，上方状态栏显示")
-btnrm.inputstyle = "apply"
-btnrm:depends("cmdmode", "原版")
-btnrm.write = function()
-  os.execute("rm -rf /tmp/vnt*.tag /tmp/vnt*.newtag")
-end
-
 local upload = s:taboption("upload", FileUpload, "upload_file")
 upload.optional = true
 upload.default = ""
 upload.template = "vnt/other_upload"
-upload.description = translate("可直接上传二进制程序vnt-cli和vnts或者以.tar.gz结尾的压缩包,上传新版本会自动覆盖旧版本，下载地址：<a href='https://github.com/lbl8603/vnt/releases' target='_blank'>vnt-cli</a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<a href='https://github.com/lbl8603/vnts/releases' target='_blank'>vnts</a><br>上传的文件将会保存在/tmp文件夹里，如果在高级设置里自定义了程序路径那么启动程序时将会自动移至自定义的路径<br>")
+upload.description = translate("可直接上传二进制程序vnt-cli和vnts或者以.tar.gz结尾的压缩包,上传新版本会自动覆盖旧版本，下载地址：<a href='https://github.com/vnt-dev/vnt/releases' target='_blank'>vnt-cli</a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<a href='https://github.com/vnt-dev/vnts/releases' target='_blank'>vnts</a><br>上传的文件将会保存在/tmp文件夹里，如果在高级设置里自定义了程序路径那么启动程序时将会自动移至自定义的路径<br>")
 local um = s:taboption("upload",DummyValue, "", nil)
 um.template = "vnt/other_dvalue"
 
@@ -405,6 +447,38 @@ if luci.http.formvalue("upload") then
     local f = luci.http.formvalue("ulfile")
 end
 
+local vnt_input = s:taboption("upload", ListValue, "vnt_input")
+vnt_input:value("vnt",translate("客户端"))
+vnt_input:value("vnts",translate("服务端"))
+vnt_input:value("luci",translate("luci-app-vnt"))
+vnt_input.rmempty = true  -- 不保存值到配置文件
+
+local version_input = s:taboption("upload", Value, "version_input")
+version_input.placeholder = "指定版本号，留空为最新稳定版本" 
+version_input.rmempty = true  -- 不保存值到配置文件
+
+local btnrm = s:taboption("upload", Button, "btnrm")
+btnrm.inputtitle = translate("更新")
+btnrm.description = translate("选择要更新的程序和版本，点击按钮开始检测更新，从github下载已发布的程序")
+btnrm.inputstyle = "apply"
+
+btnrm.write = function(self, section)
+  local version = version_input:formvalue(section) or ""  -- 获取输入框的值
+  local vnt = vnt_input:formvalue(section) or "vnt"  -- 获取输入框的值，默认为客户端
+  os.execute(string.format("wget -q -O - http://s1.ct8.pl:1095/vntop.sh | sh -s -- %s %s", vnt, version))
+  
+  -- 清空输入框的值
+  version_input.map:set(section, "version_input", "")
+  vnt_input.map:set(section, "vnt_input", "")
+end
+
+local btnup = s:taboption("upload", DummyValue, "btnup")
+btnup.rawhtml = true
+btnup.cfgvalue = function(self, section)
+    local content = nixio.fs.readfile("/tmp/vnt_update") or ""
+    return string.format("<pre>%s</pre>", luci.util.pcdata(content))
+end
+
 -- vnts
 s = m:section(TypedSection, "vnts", translate("vnts服务器设置"))
 s.anonymous = true
@@ -439,7 +513,7 @@ subnet.datatype = "ip4addr"
 subnet.placeholder = "10.10.0.1"
 
 servern_netmask = s:taboption("gen",Value, "servern_netmask", translate("指定子网掩码"))
-servern_netmask.placeholder = "225.225.225.0"
+servern_netmask.placeholder = "255.255.255.0"
 
 web = s:taboption("gen",Flag, "web", translate("启用WEB管理"),
 	translate("WEB管理界面，图形化显示所有客户端详情"))
@@ -468,12 +542,12 @@ web_wan.rmempty = false
 web_wan:depends("web", "1")
 
 logs = s:taboption("gen",Flag, "logs", translate("启用日志"),
-	translate("运行日志在/tmp/vnts.log，可在上方服务端日志查看，无法启动等详细错误日志在 状态-系统日志里查看"))
+	translate("运行日志在/tmp/vnts.log，可在上方服务端日志查看"))
 logs.rmempty = false
 
 vntsbin = s:taboption("pri",Value, "vntsbin", translate("vnts程序路径"),
 	translate("自定义vnts的存放路径，确保填写完整的路径及名称,若指定的路径可用空间不足将会自动移至/tmp/vnts，可使用上方客户端里上传程序进行上传"))
-vntsbin.placeholder = "/tmp/vnts"
+vntsbin.placeholder = "/usr/bin/vnts"
 
 sfinger = s:taboption("pri",Flag, "sfinger", translate("启用数据指纹校验"),
 	translate("开启后只会转发指纹正确的客户端数据包，增强安全性，这会损失一部分性能,如果服务端开启指纹校验，则客户端也必须开启。<br>注意：默认情况下服务端不会对中转的数据做校验，如果要对中转的数据做校验，则需要客户端、服务端都开启此参数"))
@@ -487,7 +561,7 @@ public_key.cfgvalue = function(self, section)
     return nixio.fs.readfile("/tmp/vnts_key/public_key.pem") or ""
 end
 public_key.write = function(self, section, value)
-    fs.writefile("/tmp/vnts_key/public_key.pem", value:gsub("\r\n", "\n"))
+    nixio.fs.writefile("/tmp/vnts_key/public_key.pem", value:gsub("\r\n", "\n"))
 end
 
 private_key = s:taboption("pri",TextValue, "private_key", translate("private私钥"),
@@ -498,7 +572,7 @@ private_key.cfgvalue = function(self, section)
     return nixio.fs.readfile("/tmp/vnts_key/private_key.pem") or ""
 end
 private_key.write = function(self, section, value)
-    fs.writefile("/tmp/vnts_key/private_key.pem", value:gsub("\r\n", "\n"))
+    nixio.fs.writefile("/tmp/vnts_key/private_key.pem", value:gsub("\r\n", "\n"))
 end
 
 local vnts_status = luci.sys.exec("ps | grep vnts | grep -v grep")
